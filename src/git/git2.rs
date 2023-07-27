@@ -14,15 +14,9 @@ pub struct Git2Analyser {
 
 impl Git2Analyser {
 	pub fn new() -> Result<Git2Analyser> {
-		let repo = match Repository::discover(".") {
-			Ok(repo) => repo,
-			Err(e) => {
-				return Err(AnalysisError::Git {
-					message: format!("Can't find Git repository: {:?}", e,),
-				}
-				.into());
-			}
-		};
+		let repo = Repository::discover(".").map_err(|e| AnalysisError::Git {
+			message: format!("Can't find Git repository: {:?}", e),
+		})?;
 
 		Ok(Git2Analyser { repo })
 	}
@@ -30,14 +24,10 @@ impl Git2Analyser {
 
 impl Analyser for Git2Analyser {
 	fn get_path(&self) -> Result<std::path::PathBuf> {
-		if let Some(path) = self.repo.workdir() {
-			Ok(path.to_path_buf())
-		} else {
-			Err(AnalysisError::Git {
-				message: "Repository is bare (has no working directory)".to_owned(),
-			}
-			.into())
-		}
+		let path = self.repo.workdir().ok_or_else(|| AnalysisError::Git {
+			message: "Repository is bare (has no working directory)".to_owned(),
+		})?;
+		Ok(path.to_path_buf())
 	}
 
 	fn get_commit_count(&self) -> Result<u64> {

@@ -20,6 +20,9 @@ use crate::git::{get_analyser as get_git_analyser, Analyser as GitAnalyser};
 use crate::languages::{get_language_index, LANG_NAMES};
 
 const NUM_STEPS: u8 = 5;
+
+/// We'll bail out on repos with more commits than this.
+/// This number can be increased, but increases the chance of rendering timeouts.
 const MAX_COMMITS: u64 = 100_000;
 
 #[derive(Parser, Debug)]
@@ -31,74 +34,23 @@ const MAX_COMMITS: u64 = 100_000;
 )]
 struct Args {
 	/// Progress ID to update the web frontend.
+	/// If not provided, no progress updates will be sent to the API.
 	progress_id: Option<String>,
 
 	/// Path to the Git repo to analyse.
+	/// Defaults to the working directory.
 	#[arg(short, long)]
 	target: Option<String>,
-}
-
-fn get_name(git: &dyn GitAnalyser) -> Result<String> {
-	let repo_path = git.get_path()?;
-	let default_name = match repo_path.file_name() {
-		Some(name) => name.to_string_lossy(),
-		None => {
-			return Err(AnalysisError::Parse {
-				message: "Missing repo path",
-			}
-			.into());
-		}
-	};
-
-	let prompt = "[2/5]\tPlease enter a name for this project";
-
-	let response: String = Input::new()
-		.with_prompt(prompt)
-		.default(default_name.to_string())
-		.interact()?;
-
-	if response.is_empty() {
-		Ok(default_name.to_string())
-	} else {
-		Ok(response)
-	}
-}
-
-fn progress<S: AsRef<str>>(
-	api: &Api,
-	progress_id: Option<&str>,
-	step: u8,
-	percent: u8,
-	message: S,
-) -> Result<()> {
-	println!("[{}/{}]\t{}", step, NUM_STEPS, message.as_ref());
-
-	if let Some(progress_id) = progress_id {
-		if percent == 100 {
-			// The render call sends the final progress notification with the public URL,
-			// we don't need to notify the API ourselves.
-		} else {
-			api.progress(progress_id, percent, message.as_ref())?;
-		}
-	}
-
-	Ok(())
 }
 
 fn run() -> Result<()> {
 	let args = Args::parse();
 	let progress_id = args.progress_id.as_deref();
 
-	// Remember the original working dir so we can restore it.
-	let original_working_dir = std::env::current_dir()?;
-
 	if let Some(target) = args.target.as_deref() {
-		if let Err(e) = std::env::set_current_dir(target) {
-			return Err(UserError::InvalidTarget {
-				message: e.to_string(),
-			}
-			.into());
-		}
+		std::env::set_current_dir(target).map_err(|e| UserError::InvalidTarget {
+			message: e.to_string(),
+		})?;
 	}
 
 	// Change dir to the root of the repo.
@@ -173,7 +125,7 @@ fn run() -> Result<()> {
 			&public_url
 		),
 	)?;
-	std::env::set_current_dir(original_working_dir)?;
+
 	Ok(())
 }
 
@@ -195,4 +147,55 @@ fn main() {
 			e
 		);
 	}
+}
+
+/// Prompts the user for the name of the repo.
+/// This is used as the title in some designs. Defaults to the directory name.
+fn get_name(git: &dyn GitAnalyser) -> Result<String> {
+	let repo_path = git.get_path()?;
+	let default_name = match repo_path.file_name() {
+		Some(name) => name.to_string_lossy(),
+		None => {
+			return Err(AnalysisError::Parse {
+				message: "Missing repo path",
+			}
+			.into());
+		}
+	};
+
+	let prompt = "[2/5]\tPlease enter a name for this project";
+
+	let response: String = Input::new()
+		.with_prompt(prompt)
+		.default(default_name.to_string())
+		.interact()?;
+
+	if response.is_empty() {
+		Ok(default_name.to_string())
+	} else {
+		Ok(response)
+	}
+}
+
+/// Prints a progress update in the terminal, and optionally updates the web
+/// frontend via the API if a progress ID has been provided.
+fn progress<S: AsRef<str>>(
+	api: &Api,
+	progress_id: Option<&str>,
+	step: u8,
+	percent: u8,
+	message: S,
+) -> Result<()> {
+	println!("[{}/{}]\t{}", step, NUM_STEPS, message.as_ref());
+
+	if let Some(progress_id) = progress_id {
+		if percent == 100 {
+			// The render call sends the final progress notification with the public URL,
+			// we don't need to notify the API ourselves.
+		} else {
+			api.progress(progress_id, percent, message.as_ref())?;
+		}
+	}
+
+	Ok(())
 }
