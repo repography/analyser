@@ -21,3 +21,12 @@ If you don't have the `git` CLI then we can use [libgit2](https://github.com/lib
 ```sh
 cargo run --release --features=git-libgit2 -- --target /path/to/your/repo
 ```
+## Inspecting the analyser
+
+If you're here because you want to ensure that the analyser isn't doing anything nefarious, here are some pointers to the most relevant bits:
+
+* [src/main.rs](./src/main.rs): The entrypoint which shows each step of the process.
+* [src/analysis.rs](./src/analysis.rs): This contains the Analysis structure which is uploaded to Repography for visualization.
+* [src/git/cli.rs](./src/git/cli.rs): The actual `git` commands which are used ([src/git/git2.rs](./src/git/git2.rs) is the same, if using libgit2 instead of `git`).
+* [src/api.rs](./src/api.rs): Interactions with the Repography API.
+* [src/encode.rs](./src/encode.rs): Encodes the analysis for upload (N.B. it is encrypted at this point with a per-repo key and will stay encrypted at rest).
